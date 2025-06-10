@@ -13,6 +13,12 @@ from selenium.webdriver.chrome.service import Service
 # Importa a função sleep do módulo time para pausar a execução
 import time
 
+# Para esperas inteligentes
+from selenium.webdriver.support.ui import WebDriverWait
+
+# Para condições de espera
+from selenium.webdriver.support import expected_conditions as EC
+
 # --- Configuração Inicial ---
 chromedriver_path = "./chromedriver.exe"
 
@@ -39,16 +45,44 @@ try:
     # Abre a URL especificada no navegador
     driver.get(site_url)
 
-    # --- Verificação ---
-    print(f"Título da página atual: {driver.title}")
+    # --- Espera Inteligente: Aguarda o campo de pesquisa estar visível e clicável ---
+    print("Aguardando o campo de pesquisa carregar...")
+    campo_pesquisa_locator = (By.CSS_SELECTOR, 'input[formcontrolname="texto"]')
 
-    # --- Pausa e Fechamento ---
-    print("Mantendo o navegador aberto por 5 segundos para você visualizar...")
+    # WebDriverWait espera até 10 segundos para a condição ser verdadeira
+    campo_pesquisa = WebDriverWait(driver, 10).until(
+        EC.presence_of_element_located(campo_pesquisa_locator)
+    )
+    print("Campo de pesquisa encontrado!")
 
-    time.sleep(10) # Pausa o programa por 5 segundos
+    # --- Digitando o Termo de Pesquisa ---
+    print(f"Digitando o termo: '{termo_pesquisa}'")
+    campo_pesquisa.send_keys(termo_pesquisa)
+    print("Termo digitado!")
 
+    # --- Localizando e Clicando no Botão de Busca ---
+    print("Localizando o botão de busca...")
+    # Define o localizador do botão
+    botao_busca_locator = (By.CLASS_NAME, 'button-icon-search')
+
+    # Espera até o botão estar visível e clicável
+    botao_busca = WebDriverWait(driver, 10).until(
+        EC.element_to_be_clickable(botao_busca_locator)
+    )
+    print("Botão de busca encontrado!")
+
+    print("Clicando no botão de busca...")
+    # Clica no botão
+    botao_busca.click()
+    print("Busca iniciada!")
+
+    # --- Pausa para visualizar os resultados da pesquisa ---
+    print("Aguardando 15 segundos para você visualizar os resultados...")
+    time.sleep(15)
+
+    # --- Fechando o Navegador ---
     print("Fechando o navegador.")
-    driver.quit() # Fecha o navegador
+    driver.quit()
     print("Navegador fechado.")
 
 except Exception as e:
@@ -56,5 +90,6 @@ except Exception as e:
     print("Verifique:")
     print("- Se o chromedriver.exe está no caminho correto.")
     print("- Se a versão do chromedriver é compatível com a do seu Chrome.")
+    print("- Se os seletores do campo e botão de pesquisa ('input[formcontrolname=\"texto\"]' e 'button-icon-search') ainda são válidos para o site.")
     if driver:
         driver.quit()
