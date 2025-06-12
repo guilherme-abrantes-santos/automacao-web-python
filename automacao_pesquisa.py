@@ -50,7 +50,7 @@ try:
     campo_pesquisa_locator = (By.CSS_SELECTOR, 'input[formcontrolname="texto"]')
 
     # WebDriverWait espera até 10 segundos para a condição ser verdadeira
-    campo_pesquisa = WebDriverWait(driver, 10).until(
+    campo_pesquisa = WebDriverWait(driver, 15).until(
         EC.presence_of_element_located(campo_pesquisa_locator)
     )
     print("Campo de pesquisa encontrado!")
@@ -60,20 +60,9 @@ try:
     campo_pesquisa.send_keys(termo_pesquisa)
     print("Termo digitado!")
 
-    # --- Localizando e Clicando no Botão de Busca ---
-    print("Localizando o botão de busca...")
-    # Define o localizador do botão
-    botao_busca_locator = (By.CLASS_NAME, 'button-icon-search')
-
-    # Espera até o botão estar visível e clicável
-    botao_busca = WebDriverWait(driver, 10).until(
-        EC.element_to_be_clickable(botao_busca_locator)
-    )
-    print("Botão de busca encontrado!")
-
-    print("Clicando no botão de busca...")
-    # Clica no botão
-    botao_busca.click()
+    # --- Acionando a Pesquisa com a Tecla ENTER ---
+    print("Pressionando ENTER para iniciar a pesquisa...")
+    campo_pesquisa.send_keys(Keys.ENTER)
     print("Busca iniciada!")
 
     # --- Pausa para visualizar os resultados da pesquisa ---
