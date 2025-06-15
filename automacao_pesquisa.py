@@ -25,6 +25,8 @@ chromedriver_path = "./chromedriver.exe"
 # URL do site que queremos acessar
 site_url = "https://comunica.pje.jus.br/"
 
+# Dados para a pesquisa
+data_pesquisa = "13/06/2025"
 termo_pesquisa = "tepedino"
 
 # --- Inicializando o Navegador ---
@@ -44,6 +46,22 @@ try:
 
     # Abre a URL especificada no navegador
     driver.get(site_url)
+
+    # --- Espera Inteligente: Aguarda o campo de data carregar ---
+    print(f"Aguardando o campo de data ('{data_pesquisa}') carregar...")
+    # Seletor para o campo de data
+    campo_data_locator = (By.CSS_SELECTOR, 'input[formcontrolname="dataDisponibilizacao"]')
+    campo_data = WebDriverWait(driver, 15).until(
+        EC.presence_of_element_located(campo_data_locator)
+    )
+    print("Campo de data encontrado!")
+
+    # --- Limpando e Digitando a Data ---
+    campo_data.clear() # É uma boa prática limpar o campo antes de digitar, caso já haja algo.
+    print(f"Digitando a data: '{data_pesquisa}'")
+    campo_data.send_keys(data_pesquisa) #! NOVO: Digita a data
+    print("Data digitada!")
+    time.sleep(1)
 
     # --- Espera Inteligente: Aguarda o campo de pesquisa estar visível e clicável ---
     print("Aguardando o campo de pesquisa carregar...")
@@ -71,10 +89,13 @@ try:
     resultado_card_locator = (By.CSS_SELECTOR, 'article.card.fadeIn')
 
     # Espera até que pelo menos um resultado de card esteja presente
-    WebDriverWait(driver, 20).until(
-        EC.presence_of_element_located(resultado_card_locator)
-    )
-    print("Resultados da pesquisa carregados!")
+    try:
+        WebDriverWait(driver, 20).until(
+            EC.presence_of_element_located(resultado_card_locator)
+        )
+        print("Resultados da pesquisa carregados!")
+    except Exception as timeout_e:
+        print(f"Tempo limite excedido para carregar resultados. Pode não haver resultados para a data/termo: {timeout_e}")
 
     # --- Extraindo e Interagindo com Cada Resultado ---
     print("\n--- Processando Resultados ---")
@@ -98,9 +119,9 @@ try:
                     numero_processo_elem = resultado.find_element(By.CSS_SELECTOR, 'span[id^="numero-processo"]') # Exemplo: id que começa com "numero-processo"
                     numero_processo = numero_processo_elem.text
                     print(f"  Número do Processo: {numero_processo}")
-                except:
+                except Exception as np_e:
                     numero_processo = "Não encontrado"
-                    print(f"  Número do Processo: {numero_processo}")
+                    print(f"  Número do Processo: {numero_processo} (Erro: {np_e})")
 
                 # --- Localizando e Clicando no Link "Imprimir" dentro DESTE resultado ---
                 print("  Localizando link 'Imprimir'...")
@@ -133,6 +154,7 @@ try:
                 # Volta o foco para a janela principal
                 driver.switch_to.window(main_window_handle)
                 print("  Foco retornado para a guia principal.")
+
             except Exception as inner_e:
                 print(f"  Erro ao processar resultado {i+1}: {inner_e}")
                 # Volta para a janela principal se um erro ocorreu em uma nova janela e o foco foi perdido
@@ -157,6 +179,6 @@ except Exception as e:
     print("Verifique:")
     print("- Se o chromedriver.exe está no caminho correto.")
     print("- Se a versão do chromedriver é compatível com a do seu Chrome.")
-    print("- Se os seletores do campo e botão de pesquisa ('input[formcontrolname=\"texto\"]' e 'button-icon-search') ainda são válidos para o site.")
+    print("- Se os seletores (data: 'input[formcontrolname=\"dataDisponibilizacao\"]', termo: 'input[formcontrolname=\"texto\"]', cards: 'article.card.fadeIn', imprimir: 'li[title=\"Imprimir\"] > a') ainda são válidos para o site.")
     if driver:
         driver.quit()
