@@ -25,7 +25,7 @@ chromedriver_path = "./chromedriver.exe"
 # URL do site que queremos acessar
 site_url = "https://comunica.pje.jus.br/"
 
-termo_pesquisa = "automação python selenium"
+termo_pesquisa = "tepedino"
 
 # --- Inicializando o Navegador ---
 print("Iniciando o navegador...")
@@ -65,11 +65,89 @@ try:
     campo_pesquisa.send_keys(Keys.ENTER)
     print("Busca iniciada!")
 
-    # --- Pausa para visualizar os resultados da pesquisa ---
-    print("Aguardando 15 segundos para você visualizar os resultados...")
-    time.sleep(15)
+    # --- Espera para os resultados carregarem ---
+    print("Aguardando os resultados da pesquisa carregarem...")
+    #Seletor para o card de resultado
+    resultado_card_locator = (By.CSS_SELECTOR, 'article.card.fadeIn')
 
-    # --- Fechando o Navegador ---
+    # Espera até que pelo menos um resultado de card esteja presente
+    WebDriverWait(driver, 20).until(
+        EC.presence_of_element_located(resultado_card_locator)
+    )
+    print("Resultados da pesquisa carregados!")
+
+    # --- Extraindo e Interagindo com Cada Resultado ---
+    print("\n--- Processando Resultados ---")
+    # Encontra TODOS os cards
+    resultados_encontrados = driver.find_elements(By.CSS_SELECTOR, 'article.card.fadeIn')
+
+    if not resultados_encontrados:
+        print("Nenhum resultado de pesquisa encontrado com o seletor especificado.")
+    else:
+        print(f"Encontrados {len(resultados_encontrados)} resultados.")
+
+        # Guarda o handle da janela principal antes de abrir novas guias
+        main_window_handle = driver.current_window_handle
+
+        for i, resultado in enumerate(resultados_encontrados):
+            print(f"\nProcessando resultado {i+1}:")
+            try:
+                # Exemplo: Tentando pegar o número do processo (se existir)
+                # Você precisaria inspecionar o elemento do número do processo dentro do card!
+                try:
+                    numero_processo_elem = resultado.find_element(By.CSS_SELECTOR, 'span[id^="numero-processo"]') # Exemplo: id que começa com "numero-processo"
+                    numero_processo = numero_processo_elem.text
+                    print(f"  Número do Processo: {numero_processo}")
+                except:
+                    numero_processo = "Não encontrado"
+                    print(f"  Número do Processo: {numero_processo}")
+
+                # --- Localizando e Clicando no Link "Imprimir" dentro DESTE resultado ---
+                print("  Localizando link 'Imprimir'...")
+                # O seletor CSS para o link 'a' dentro do 'li' que tem title='Imprimir'
+                link_imprimir_locator = (By.CSS_SELECTOR, 'li[title="Imprimir"] > a')
+
+                link_imprimir = WebDriverWait(resultado, 10).until(
+                    EC.element_to_be_clickable(link_imprimir_locator)
+                )
+                print("  Link 'Imprimir' encontrado! Clicando...")
+                link_imprimir.click()
+
+                # --- Lidar com a Nova Guia/Janela ---
+                print("  Lidando com a nova guia de impressão...")
+                # Espera até que o número de handles (abas/janelas) seja 2 (original + a nova)
+                WebDriverWait(driver, 10).until(EC.number_of_windows_to_be(2))
+                # Itera sobre todas as janelas abertas
+                for window_handle in driver.window_handles: # Pega todos os IDs de janelas
+                    if window_handle != main_window_handle: # Se não for a janela principal
+                        driver.switch_to.window(window_handle) # Muda o foco para a nova janela
+                        break
+
+                # Agora o Selenium está na nova guia
+                print(f"  URL da nova guia: {driver.current_url}") # Imprime o URL da nova guia
+                # Você pode adicionar lógica aqui para salvar o conteúdo, ou o URL
+
+                print("  Fechando a nova guia.")
+                driver.close()
+
+                # Volta o foco para a janela principal
+                driver.switch_to.window(main_window_handle)
+                print("  Foco retornado para a guia principal.")
+            except Exception as inner_e:
+                print(f"  Erro ao processar resultado {i+1}: {inner_e}")
+                # Volta para a janela principal se um erro ocorreu em uma nova janela e o foco foi perdido
+                if len(driver.window_handles) > 1 and driver.current_window_handle != main_window_handle:
+                    driver.close()
+                    driver.switch_to.window(main_window_handle)
+                    # Adiciona um pequeno delay para não sobrecarregar o site, se for processar muitos itens
+                    time.sleep(1)
+
+    print("\n--- Processamento de Resultados Concluído ---")
+
+    # --- Pausa final e Fechamento ---
+    print("Aguardando 5 segundos antes de fechar o navegador principal.")
+    time.sleep(5) # Pausa final antes de fechar tudo
+
     print("Fechando o navegador.")
     driver.quit()
     print("Navegador fechado.")
