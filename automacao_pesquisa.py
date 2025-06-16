@@ -85,7 +85,7 @@ def processar_resultados_da_pagina_atual(driver, main_window_handle, output_fold
         # Isso é crucial depois de alternar janelas
         resultados_atuais = driver.find_elements(By.CSS_SELECTOR, 'article.card.fadeIn')
         if i >= len(resultados_atuais): # Segurança para caso a lista mude inesperadamente
-            print(f"  Pulando resultado {i+1}, pois a lista de resultados encolheu.")
+            print(f"   Pulando resultado {i+1}, pois a lista de resultados encolheu.")
             continue
 
         resultado = resultados_atuais[i] 
@@ -97,23 +97,23 @@ def processar_resultados_da_pagina_atual(driver, main_window_handle, output_fold
             # --- Extraindo o Número do Processo ---
             numero_processo_elem = resultado.find_element(By.CSS_SELECTOR, 'div#numero-processo > span.numero-unico-formatado')
             numero_processo = numero_processo_elem.text.strip()
-            print(f"  Número do Processo: {numero_processo}")
+            print(f"   Número do Processo: {numero_processo}")
         except Exception as np_e:
-            print(f"  Número do Processo: {numero_processo} (Erro ao extrair: {np_e})")
+            print(f"   Número do Processo: {numero_processo} (Erro ao extrair: {np_e})")
 
         try:
             # --- Localizando e Clicando no Link "Imprimir" dentro DESTE resultado ---
-            print("  Localizando link 'Imprimir'...")
+            print("   Localizando link 'Imprimir'...")
             link_imprimir_locator = (By.CSS_SELECTOR, 'li[title="Imprimir"] > a')
             
             link_imprimir = WebDriverWait(resultado, 10).until(
                 EC.element_to_be_clickable(link_imprimir_locator)
             )
-            print("  Link 'Imprimir' encontrado! Clicando...")
+            print("   Link 'Imprimir' encontrado! Clicando...")
             link_imprimir.click()
 
             # --- Lidar com a Nova Guia/Janela (PDF) ---
-            print("  Lidando com a nova guia de impressão (PDF)...")
+            print("   Lidando com a nova guia de impressão (PDF)...")
             WebDriverWait(driver, 10).until(EC.number_of_windows_to_be(2))
 
             for window_handle in driver.window_handles:
@@ -122,7 +122,7 @@ def processar_resultados_da_pagina_atual(driver, main_window_handle, output_fold
                     break
             
             pdf_url = driver.current_url
-            print(f"  URL do PDF: {pdf_url}")
+            print(f"   URL do PDF: {pdf_url}")
 
             # --- Salvando o PDF ---
             if pdf_url.endswith(".pdf") or "certidao" in pdf_url:
@@ -133,7 +133,7 @@ def processar_resultados_da_pagina_atual(driver, main_window_handle, output_fold
                 file_name = f"{sanitized_numero_processo}_{unique_id}_Certidao.pdf"
                 file_path = os.path.join(output_folder, file_name)
                 
-                print(f"  Baixando e salvando PDF como: {file_path}")
+                print(f"   Baixando e salvando PDF como: {file_path}")
                 try:
                     response = requests.get(pdf_url, stream=True)
                     response.raise_for_status() 
@@ -141,24 +141,24 @@ def processar_resultados_da_pagina_atual(driver, main_window_handle, output_fold
                     with open(file_path, 'wb') as pdf_file:
                         for chunk in response.iter_content(chunk_size=8192):
                             pdf_file.write(chunk)
-                    print("  PDF salvo com sucesso!")
+                    print("   PDF salvo com sucesso!")
                 except requests.exceptions.RequestException as req_e:
-                    print(f"  Erro ao baixar/salvar o PDF '{pdf_url}': {req_e}")
+                    print(f"   Erro ao baixar/salvar o PDF '{pdf_url}': {req_e}")
             else:
-                print(f"  O URL '{pdf_url}' não parece ser um PDF/certidão diretamente baixável.")
+                print(f"   O URL '{pdf_url}' não parece ser um PDF/certidão diretamente baixável.")
 
-            print("  Fechando a nova guia.")
+            print("   Fechando a nova guia.")
             driver.close()
 
             driver.switch_to.window(main_window_handle)
-            print("  Foco retornado para a guia principal.")
+            print("   Foco retornado para a guia principal.")
             time.sleep(0.5) # Pequeno delay para garantir que a página principal esteja pronta
 
         except Exception as inner_e:
-            print(f"  Erro ao processar o link 'Imprimir' ou a nova guia para o resultado {i+1}: {inner_e}")
+            print(f"   Erro ao processar o link 'Imprimir' ou a nova guia para o resultado {i+1}: {inner_e}")
             # Garante que o navegador volte para a janela principal em caso de erro
             if len(driver.window_handles) > 1 and driver.current_window_handle != main_window_handle:
-                print("  Tentando fechar janela extra e voltar ao foco principal após erro.")
+                print("   Tentando fechar janela extra e voltar ao foco principal após erro.")
                 driver.close()
                 driver.switch_to.window(main_window_handle)
             time.sleep(1) 
@@ -188,7 +188,6 @@ try:
         # --- Lógica de Filtro por Tribunais e Paginação ---
         
         # Encontra todas as abas de tribunal disponíveis
-        # Seletor para as abas dos tribunais
         abas_tribunais_locator = (By.CSS_SELECTOR, 'div[role="tab"][class*="mat-tab-label"]')
         
         # Espera que pelo menos uma aba de tribunal esteja presente
@@ -198,7 +197,6 @@ try:
         print("Abas de tribunal carregadas.")
 
         # Obtém os nomes dos tribunais e os elementos das abas
-        # Para evitar StaleElementReferenceException com as abas, vamos pegar seus textos e re-encontrá-las
         abas_elementos_iniciais = driver.find_elements(abas_tribunais_locator)
         nomes_tribunais = [aba.find_element(By.CSS_SELECTOR, 'span').text.strip() for aba in abas_elementos_iniciais]
         
@@ -206,28 +204,29 @@ try:
 
         for nome_tribunal in nomes_tribunais:
             print(f"\n***** Filtrando por Tribunal: {nome_tribunal} *****")
-            # Re-encontra a aba do tribunal específico para evitar stale element
-            # Seletor XPATH mais robusto para encontrar a aba pelo texto visível
-            aba_tribunal_locator = (By.XPATH, f'//div[@role="tab" and contains(@class, "mat-tab-label")]//span[text()="{nome_tribunal}"]/ancestor::div[@role="tab"]')
+            
+            # --- INÍCIO DA MUDANÇA ---
+            # Construção direta da string do XPath para o localizador
+            xpath_aba_tribunal = f'//div[@role="tab" and contains(@class, "mat-tab-label")]//span[text()="{nome_tribunal}"]/ancestor::div[@role="tab"]'
             
             try:
+                # Usamos By.XPATH diretamente na tupla para EC.element_to_be_clickable
                 aba_tribunal = WebDriverWait(driver, 10).until(
-                    EC.element_to_be_clickable(aba_tribunal_locator)
+                    EC.element_to_be_clickable((By.XPATH, xpath_aba_tribunal))
                 )
                 if 'mat-tab-label-active' not in aba_tribunal.get_attribute('class'):
-                    print(f"  Clicando na aba '{nome_tribunal}'...")
+                    print(f"   Clicando na aba '{nome_tribunal}'...")
                     aba_tribunal.click()
                     # Espera a página atualizar os resultados após o clique no filtro
-                    # Pode ser a staleness do primeiro card antigo ou a presença de um novo
-                    # Ou um sleep simples se a atualização for rápida e não tiver um indicador claro
-                    print(f"  Aguardando resultados para '{nome_tribunal}' carregarem...")
+                    print(f"   Aguardando resultados para '{nome_tribunal}' carregarem...")
                     WebDriverWait(driver, 10).until(
                          EC.presence_of_element_located((By.CSS_SELECTOR, 'article.card.fadeIn'))
                     )
                     time.sleep(2) # Um sleep para dar tempo de carregar a lista corretamente
-                    print(f"  Resultados para '{nome_tribunal}' carregados.")
+                    print(f"   Resultados para '{nome_tribunal}' carregados.")
                 else:
-                    print(f"  Aba '{nome_tribunal}' já está ativa.")
+                    print(f"   Aba '{nome_tribunal}' já está ativa.")
+            # --- FIM DA MUDANÇA ---
 
                 # --- Loop de Paginação ---
                 pagina_atual = 1
@@ -246,10 +245,10 @@ try:
                         )
                         # Verifica se o botão "Próxima Página" está desabilitado
                         if 'ui-state-disabled' in proxima_pagina_button.get_attribute('class'):
-                            print(f"  Botão 'Próxima Página' desabilitado. Última página para '{nome_tribunal}'.")
+                            print(f"   Botão 'Próxima Página' desabilitado. Última página para '{nome_tribunal}'.")
                             break # Sai do loop de paginação
                         else:
-                            print("  Clicando em 'Próxima Página'...")
+                            print("   Clicando em 'Próxima Página'...")
                             # Obtenha uma referência a um elemento que será 'stale'
                             primeiro_card_antes_click = driver.find_element(By.CSS_SELECTOR, 'article.card.fadeIn')
                             
@@ -263,12 +262,12 @@ try:
                             WebDriverWait(driver, 10).until(
                                 EC.presence_of_element_located((By.CSS_SELECTOR, 'article.card.fadeIn'))
                             )
-                            print("  Página carregada com sucesso!")
+                            print("   Página carregada com sucesso!")
                             pagina_atual += 1
                             time.sleep(1) # Pequeno delay entre as páginas
                     except Exception as page_nav_e:
-                        print(f"  Erro ao navegar para a próxima página ou botão 'Próxima Página' não encontrado/clicável: {page_nav_e}")
-                        print(f"  Assumindo que não há mais páginas para o tribunal '{nome_tribunal}'.")
+                        print(f"   Erro ao navegar para a próxima página ou botão 'Próxima Página' não encontrado/clicável: {page_nav_e}")
+                        print(f"   Assumindo que não há mais páginas para o tribunal '{nome_tribunal}'.")
                         break # Sai do loop de paginação se não encontrar o botão ou houver erro
 
             except Exception as aba_e:
