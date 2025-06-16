@@ -19,6 +19,12 @@ from selenium.webdriver.support.ui import WebDriverWait
 # Para condições de espera
 from selenium.webdriver.support import expected_conditions as EC
 
+# Importa a biblioteca requests
+import requests
+
+# Importa a biblioteca os para manipulação de caminhos/pastas
+import os
+
 # --- Configuração Inicial ---
 chromedriver_path = "./chromedriver.exe"
 
@@ -28,6 +34,12 @@ site_url = "https://comunica.pje.jus.br/"
 # Dados para a pesquisa
 data_pesquisa = "13/06/2025"
 termo_pesquisa = "tepedino"
+
+# Diretório para salvar os PDFs
+output_folder = "pdfs_pje"
+if not os.path.exists(output_folder):
+    os.makedirs(output_folder)
+    print(f"Diretório '{output_folder}' criado para salvar os PDFs.")
 
 # --- Inicializando o Navegador ---
 print("Iniciando o navegador...")
@@ -59,28 +71,28 @@ try:
     # --- Limpando e Digitando a Data ---
     campo_data.clear() # É uma boa prática limpar o campo antes de digitar, caso já haja algo.
     print(f"Digitando a data: '{data_pesquisa}'")
-    campo_data.send_keys(data_pesquisa) #! NOVO: Digita a data
+    campo_data.send_keys(data_pesquisa) # Digita a data
     print("Data digitada!")
     time.sleep(1)
 
     # --- Espera Inteligente: Aguarda o campo de pesquisa estar visível e clicável ---
     print("Aguardando o campo de pesquisa carregar...")
-    campo_pesquisa_locator = (By.CSS_SELECTOR, 'input[formcontrolname="texto"]')
+    campo_pesquisa_texto_locator = (By.CSS_SELECTOR, 'input[formcontrolname="texto"]')
 
     # WebDriverWait espera até 10 segundos para a condição ser verdadeira
-    campo_pesquisa = WebDriverWait(driver, 15).until(
-        EC.presence_of_element_located(campo_pesquisa_locator)
+    campo_pesquisa_texto = WebDriverWait(driver, 15).until(
+        EC.presence_of_element_located(campo_pesquisa_texto_locator)
     )
-    print("Campo de pesquisa encontrado!")
+    print("Campo de pesquisa textual encontrado!")
 
     # --- Digitando o Termo de Pesquisa ---
     print(f"Digitando o termo: '{termo_pesquisa}'")
-    campo_pesquisa.send_keys(termo_pesquisa)
+    campo_pesquisa_texto.send_keys(termo_pesquisa)
     print("Termo digitado!")
 
     # --- Acionando a Pesquisa com a Tecla ENTER ---
     print("Pressionando ENTER para iniciar a pesquisa...")
-    campo_pesquisa.send_keys(Keys.ENTER)
+    campo_pesquisa_texto.send_keys(Keys.ENTER)
     print("Busca iniciada!")
 
     # --- Espera para os resultados carregarem ---
@@ -96,6 +108,7 @@ try:
         print("Resultados da pesquisa carregados!")
     except Exception as timeout_e:
         print(f"Tempo limite excedido para carregar resultados. Pode não haver resultados para a data/termo: {timeout_e}")
+        pass
 
     # --- Extraindo e Interagindo com Cada Resultado ---
     print("\n--- Processando Resultados ---")
@@ -112,17 +125,17 @@ try:
 
         for i, resultado in enumerate(resultados_encontrados):
             print(f"\nProcessando resultado {i+1}:")
-            try:
-                # Exemplo: Tentando pegar o número do processo (se existir)
-                # Você precisaria inspecionar o elemento do número do processo dentro do card!
-                try:
-                    numero_processo_elem = resultado.find_element(By.CSS_SELECTOR, 'span[id^="numero-processo"]') # Exemplo: id que começa com "numero-processo"
-                    numero_processo = numero_processo_elem.text
-                    print(f"  Número do Processo: {numero_processo}")
-                except Exception as np_e:
-                    numero_processo = "Não encontrado"
-                    print(f"  Número do Processo: {numero_processo} (Erro: {np_e})")
+            numero_processo = "Não encontrado"
 
+            try:
+                # --- Extraindo o Número do Processo ---
+                numero_processo_elem = resultado.find_element(By.CSS_SELECTOR, 'span[id^="numero-processo"]') # Exemplo: id que começa com "numero-processo"
+                numero_processo = numero_processo_elem.text
+                print(f"  Número do Processo: {numero_processo}")
+            except Exception as np_e:
+                print(f"  Número do Processo: {numero_processo} (Erro: {np_e})")
+            
+            try:
                 # --- Localizando e Clicando no Link "Imprimir" dentro DESTE resultado ---
                 print("  Localizando link 'Imprimir'...")
                 # O seletor CSS para o link 'a' dentro do 'li' que tem title='Imprimir'
@@ -143,10 +156,27 @@ try:
                     if window_handle != main_window_handle: # Se não for a janela principal
                         driver.switch_to.window(window_handle) # Muda o foco para a nova janela
                         break
+                
+                pdf_url = driver.current_url # Obtém o URL da nova guia (que é o PDF)
+                print(f"  URL do PDF: {pdf_url}")
 
-                # Agora o Selenium está na nova guia
-                print(f"  URL da nova guia: {driver.current_url}") # Imprime o URL da nova guia
-                # Você pode adicionar lógica aqui para salvar o conteúdo, ou o URL
+                # --- Salvando o PDF ---
+                if pdf_url.endswith(".pdf") or "certidao" in pdf_url: # Verifica se é um URL de PDF/certidão
+                    file_name = f"{numero_processo.replace('.', '_').replace('-', '_').replace('/', '_')}_Certidao.pdf" # Nome do arquivo
+                    file_path = os.path.join(output_folder, file_name) # Caminho completo
+
+                    print(f"  Baixando e salvando PDF como: {file_path}")
+                    try:
+                        # Faz a requisição HTTP para baixar o PDF
+                        response = requests.get(pdf_url, stream=True) # Faz a requisição
+                        response.raise_for_status() # Lança um erro para códigos de status HTTP ruins (4xx ou 5xx)
+
+                        with open(file_path, 'wb') as pdf_file: # Abre o arquivo em modo binário de escrita
+                            for chunk in response.iter_content(chunk_size=8192): # Itera sobre o conteúdo em pedaços
+                                pdf_file.write(chunk)
+                        print("  PDF salvo com sucesso!")
+                    except requests.exceptions.RequestException as req_e:
+                        print(f"  O URL '{pdf_url}' não parece ser um PDF/certidão diretamente baixável.")
 
                 print("  Fechando a nova guia.")
                 driver.close()
@@ -156,7 +186,7 @@ try:
                 print("  Foco retornado para a guia principal.")
 
             except Exception as inner_e:
-                print(f"  Erro ao processar resultado {i+1}: {inner_e}")
+                print(f"  Erro ao processar o link 'Imprimir' ou a nova guia para o resultado {i+1}: {inner_e}")
                 # Volta para a janela principal se um erro ocorreu em uma nova janela e o foco foi perdido
                 if len(driver.window_handles) > 1 and driver.current_window_handle != main_window_handle:
                     driver.close()
@@ -179,6 +209,6 @@ except Exception as e:
     print("Verifique:")
     print("- Se o chromedriver.exe está no caminho correto.")
     print("- Se a versão do chromedriver é compatível com a do seu Chrome.")
-    print("- Se os seletores (data: 'input[formcontrolname=\"dataDisponibilizacao\"]', termo: 'input[formcontrolname=\"texto\"]', cards: 'article.card.fadeIn', imprimir: 'li[title=\"Imprimir\"] > a') ainda são válidos para o site.")
+    print("- Se os seletores (data: 'input[formcontrolname=\"dataDisponibilizacao\"]', termo: 'input[formcontrolname=\"texto\"]', cards: 'article.card.fadeIn', numero_processo: 'div#numero-processo > span.numero-unico-formatado', imprimir: 'li[title=\"Imprimir\"] > a') ainda são válidos para o site.")
     if driver:
         driver.quit()
