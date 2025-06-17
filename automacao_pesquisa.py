@@ -1,81 +1,32 @@
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.chrome.service import Service
-import time
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.common.action_chains import ActionChains # Importar ActionChains
-import requests
 import os
-
-# Importar Options para configurar opções do Chrome
-from selenium.webdriver.chrome.options import Options 
+import requests
+import time
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import WebDriverWait
+from datetime import datetime
 
 # --- Configuração Inicial ---
 chromedriver_path = "./chromedriver.exe" # Certifique-se de que este chromedriver.exe corresponde ao Chrome que você está usando
-site_url = "https://comunica.pje.jus.br/"
+base_url = "https://comunica.pje.jus.br/consulta"
 
 # Dados para a pesquisa
-data_pesquisa = "16/06/2025" 
+# Usaremos a data de hoje para a pesquisa
+data_pesquisa_inicio = datetime.now().strftime("%Y-%m-%d") # Formato YYYY-MM-DD para URL
+data_pesquisa_fim = datetime.now().strftime("%Y-%m-%d")   # Formato YYYY-MM-DD para URL
 termo_pesquisa = "tepedino"
+tribunal_sigla = "TJSP" # Tribunal do Estado de São Paulo, conforme sua sugestão
 
 # Diretório para salvar os PDFs
-output_folder = "pdfs_pje"
+output_folder = "pdfs_pje_tjsp"
 if not os.path.exists(output_folder):
     os.makedirs(output_folder)
     print(f"Diretório '{output_folder}' criado para salvar os PDFs.")
 
 # --- Funções Auxiliares ---
-
-def preencher_e_pesquisar(driver, data, termo):
-    """Preenche os campos de data e termo e inicia a pesquisa."""
-    print(f"\n--- Iniciando Nova Pesquisa para Data: '{data}', Termo: '{termo}' ---")
-
-    # Espera e preenche campo de data
-    campo_data_locator = (By.CSS_SELECTOR, 'input[formcontrolname="dataDisponibilizacao"]')
-    campo_data = WebDriverWait(driver, 15).until(
-        EC.presence_of_element_located(campo_data_locator) 
-    )
-    campo_data.clear()
-    campo_data.send_keys(data)
-    print(f"Data digitada: '{data}'")
-    time.sleep(0.5) 
-
-    # Espera e preenche campo de pesquisa textual
-    campo_pesquisa_texto_locator = (By.CSS_SELECTOR, 'input[formcontrolname="texto"]')
-    campo_pesquisa_texto = WebDriverWait(driver, 15).until(
-        EC.presence_of_element_located(campo_pesquisa_texto_locator) 
-    )
-    campo_pesquisa_texto.clear() 
-    campo_pesquisa_texto.send_keys(termo)
-    print(f"Termo digitado: '{termo}'")
-
-    # Aciona a pesquisa
-    campo_pesquisa_texto.send_keys(Keys.ENTER)
-    print("Busca iniciada!")
-
-    # Espera pelos resultados
-    print("Aguardando os resultados da pesquisa carregarem...")
-    try:
-        # Espera que pelo menos um card de resultado apareça
-        WebDriverWait(driver, 20).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, 'article.card.fadeIn'))
-        )
-        # E também espera que o spinner (se existir) desapareça.
-        try:
-            WebDriverWait(driver, 5).until_not(
-                EC.visibility_of_element_located((By.CSS_SELECTOR, 'mat-progress-spinner')) 
-            )
-            print("Spinner de carregamento desapareceu (se existia).")
-        except:
-            print("Nenhum spinner de carregamento detectado ou desapareceu rapidamente.")
-
-        print("Resultados da pesquisa carregados!")
-    except Exception as timeout_e:
-        print(f"Tempo limite excedido para carregar resultados. Pode não haver resultados para a data/termo: {timeout_e}")
-        return False
-    return True
 
 def processar_resultados_da_pagina_atual(driver, main_window_handle, output_folder, nome_tribunal_atual):
     """
@@ -84,7 +35,8 @@ def processar_resultados_da_pagina_atual(driver, main_window_handle, output_fold
     """
     print("\n--- Processando Resultados da Página Atual ---")
     
-    time.sleep(1.5) 
+    time.sleep(1.5) # Adicionar um pequeno tempo para garantir que a DOM está estável
+    
     resultados_encontrados = driver.find_elements(By.CSS_SELECTOR, 'article.card.fadeIn') 
     
     if not resultados_encontrados:
@@ -94,6 +46,7 @@ def processar_resultados_da_pagina_atual(driver, main_window_handle, output_fold
     print(f"Encontrados {len(resultados_encontrados)} resultados nesta página para o tribunal '{nome_tribunal_atual}'.")
 
     for i in range(len(resultados_encontrados)): 
+        # Re-obtém os resultados a cada iteração do loop de cards para evitar StaleElementReferenceException
         resultados_atuais = driver.find_elements(By.CSS_SELECTOR, 'article.card.fadeIn')
         if i >= len(resultados_atuais): 
             print(f"    Pulando resultado {i+1}, pois a lista de resultados encolheu inesperadamente.")
@@ -122,7 +75,6 @@ def processar_resultados_da_pagina_atual(driver, main_window_handle, output_fold
             
             driver.execute_script("arguments[0].click();", link_imprimir)
 
-
             print("    Lidando com a nova guia de impressão (PDF)...")
             WebDriverWait(driver, 10).until(EC.number_of_windows_to_be(2))
 
@@ -138,6 +90,7 @@ def processar_resultados_da_pagina_atual(driver, main_window_handle, output_fold
                 unique_id = pdf_url.split('/')[-2] if "/certidao" in pdf_url else pdf_url.split('/')[-1].replace(".pdf", "")
                 sanitized_numero_processo = numero_processo.replace('.', '_').replace('-', '_').replace('/', '_').replace('\\', '_').replace(':', '_').replace('*', '_').replace('?', '_').replace('"', '_').replace('<', '_').replace('>', '_').replace('|', '_')
                 
+                # INCLUINDO O NOME DO TRIBUNAL NO NOME DO ARQUIVO
                 file_name = f"{sanitized_numero_processo}_{nome_tribunal_atual.replace(' ', '_').replace('\n', '')}_{unique_id}_Certidao.pdf"
                 file_path = os.path.join(output_folder, file_name)
                 
@@ -188,219 +141,110 @@ try:
     driver = webdriver.Chrome(service=service, options=chrome_options)
     main_window_handle = driver.current_window_handle 
 
-    print(f"Navegador aberto! Acessando o site: {site_url}")
-    driver.get(site_url)
+    # --- Construindo a URL de pesquisa diretamente ---
+    # URL completa: https://comunica.pje.jus.br/consulta?texto=tepedino&siglaTribunal=TJSP&dataDisponibilizacaoInicio=2025-06-17&dataDisponibilizacaoFim=2025-06-17
+    # Usamos f-strings para construir a URL de forma limpa
+    search_url = (
+        f"{base_url}?"
+        f"texto={termo_pesquisa}"
+        f"&siglaTribunal={tribunal_sigla}"
+        f"&dataDisponibilizacaoInicio={data_pesquisa_inicio}"
+        f"&dataDisponibilizacaoFim={data_pesquisa_fim}"
+    )
+    
+    print(f"Acessando diretamente a URL de pesquisa filtrada: {search_url}")
+    driver.get(search_url)
 
-    if not preencher_e_pesquisar(driver, data_pesquisa, termo_pesquisa):
-        print("Nenhuma publicação encontrada para a pesquisa inicial. Encerrando.")
+    print("Aguardando os resultados da pesquisa carregarem na URL direta...")
+    try:
+        WebDriverWait(driver, 30).until( # Aumentado o timeout para a página inicial carregar
+            EC.presence_of_element_located((By.CSS_SELECTOR, 'article.card.fadeIn'))
+        )
+        try:
+            WebDriverWait(driver, 10).until_not( # Pode haver um spinner mesmo na carga direta
+                EC.visibility_of_element_located((By.CSS_SELECTOR, 'mat-progress-spinner')) 
+            )
+            print("Spinner de carregamento desapareceu (se existia).")
+        except:
+            print("Nenhum spinner de carregamento detectado ou desapareceu rapidamente.")
+
+        print(f"Resultados para {tribunal_sigla} carregados!")
+    except Exception as timeout_e:
+        print(f"Tempo limite excedido para carregar resultados na URL direta. Pode não haver resultados para esta data/termo/tribunal: {timeout_e}")
+        # Neste caso, não há o que processar, encerramos.
         driver.quit() 
         exit() 
 
-    time.sleep(5) 
+    time.sleep(3) # Pequeno delay após o carregamento inicial
 
-    abas_tribunais_locator = (By.CSS_SELECTOR, 'div[role="tab"][class*="mat-tab-label"]')
-    
-    WebDriverWait(driver, 15).until(
-        EC.presence_of_element_located(abas_tribunais_locator) 
-    )
-    print("Abas de tribunal carregadas.")
-
-    abas_elementos_iniciais = driver.find_elements(*abas_tribunais_locator)
-    nomes_tribunais = []
-    for aba_elem in abas_elementos_iniciais:
-        try:
-            full_text = aba_elem.text.strip()
-            if full_text: 
-                nomes_tribunais.append(full_text)
-            else:
-                content_div = WebDriverWait(aba_elem, 2).until(
-                    EC.presence_of_element_located((By.CLASS_NAME, 'mat-tab-label-content'))
-                )
-                if content_div.text.strip():
-                    nomes_tribunais.append(content_div.text.strip())
-                else:
-                    print(f"Aviso: Nome de tribunal vazio encontrado para uma aba.")
-
-        except Exception as e:
-            print(f"Aviso: Não foi possível extrair o nome de uma aba de tribunal. Erro: {e}")
-            print(f"HTML da aba que falhou: {aba_elem.get_attribute('outerHTML')}") 
-            pass 
-    
-    print(f"Tribunais encontrados: {nomes_tribunais}")
-
-    # --- LOOP PRINCIPAL DE PROCESSAMENTO POR TRIBUNAL ---
-    for i, nome_tribunal_completo in enumerate(nomes_tribunais): 
-        print(f"\n***** Processando Tribunal: {nome_tribunal_completo} (Índice {i}) *****")
+    # --- Loop de Paginação (agora para um único tribunal) ---
+    pagina_atual = 1
+    while True:
+        print(f"\n--- Processando Página {pagina_atual} para Tribunal: {tribunal_sigla} ---")
         
-        time.sleep(3) # Tempo para a interface se estabilizar antes de interagir com a aba
+        current_cards = driver.find_elements(By.CSS_SELECTOR, 'article.card.fadeIn')
+        if not current_cards:
+            print(f"    Nenhum card de resultado encontrado na página {pagina_atual} para {tribunal_sigla}. Assumindo fim da paginação ou aba sem resultados.")
+            break
+
+        processar_resultados_da_pagina_atual(driver, main_window_handle, output_folder, tribunal_sigla)
+
+        proxima_pagina_locator = (By.CSS_SELECTOR, 'li.ui-paginator-next')
         
         try:
-            # Re-encontra TODAS as abas disponíveis no DOM a cada iteração
-            # Isso é crucial porque o DOM pode ter mudado após a interação com a aba anterior
-            todas_abas_disponiveis = WebDriverWait(driver, 15).until(
-                EC.presence_of_all_elements_located(abas_tribunais_locator)
+            proxima_pagina_button = WebDriverWait(driver, 10).until( 
+                EC.element_to_be_clickable(proxima_pagina_locator)
             )
             
-            aba_para_clicar = None
-            for aba_elemento in todas_abas_disponiveis:
-                if aba_elemento.text.strip().replace('\n', '') == nome_tribunal_completo.replace('\n', ''):
-                    aba_para_clicar = aba_elemento
-                    break
-            
-            if not aba_para_clicar:
-                print(f"    Aba para o tribunal '{nome_tribunal_completo}' não foi encontrada na lista de abas disponíveis. Pulando.")
-                continue 
-            
-            aba_tribunal = WebDriverWait(driver, 10).until(
-                EC.element_to_be_clickable(aba_para_clicar)
-            )
-            
-            # Sempre rolar para o topo para garantir visibilidade
-            driver.execute_script("window.scrollTo(0, 0);")
-            time.sleep(1) 
-
-            # Rolar o elemento da aba para a vista, com um offset maior
-            driver.execute_script("arguments[0].scrollIntoView(true); window.scrollBy(0, -180);", aba_tribunal) # Aumentei o offset
-            time.sleep(1) 
-
-            # Verificar se a aba já está ativa (para evitar cliques desnecessários)
-            if 'mat-tab-label-active' in aba_tribunal.get_attribute('class'):
-                print(f"    Aba '{nome_tribunal_completo}' já está ativa.")
+            if 'ui-state-disabled' in proxima_pagina_button.get_attribute('class') or \
+               proxima_pagina_button.get_attribute('aria-disabled') == 'true':
+                print(f"    Botão 'Próxima Página' desabilitado. Última página para '{tribunal_sigla}'.")
+                break 
             else:
-                print(f"    Clicando na aba '{nome_tribunal_completo}' via ActionChains (simulando clique de mouse)...")
-                try:
-                    ActionChains(driver).move_to_element(aba_tribunal).click().perform()
-                    print(f"    Aba '{nome_tribunal_completo}' clicada com sucesso via ActionChains.")
-                except Exception as click_e:
-                    print(f"    Erro ao clicar via ActionChains: {click_e}. Tentando via JavaScript (fallback)...")
-                    driver.execute_script("arguments[0].click();", aba_tribunal)
-                    print(f"    Aba '{nome_tribunal_completo}' clicada com sucesso via JavaScript.")
+                print("    Clicando em 'Próxima Página'...")
+                # Rolar para o botão de paginação antes de clicar
+                driver.execute_script("arguments[0].scrollIntoView(true); window.scrollBy(0, -50);", proxima_pagina_button)
+                time.sleep(0.5) 
                 
-            # --- VERIFICAÇÃO DE ATIVAÇÃO DA ABA E CARREGAMENTO DO CONTEÚDO ---
-            # Espera que a aba se torne ativa (após o clique)
-            xpath_aba_ativa = f'//div[contains(@class, "mat-tab-label") and contains(@class, "mat-tab-label-active") and normalize-space(.//div[@class="mat-tab-label-content"]) = "{nome_tribunal_completo.replace("\\n", "")}" ]'
-            try:
-                WebDriverWait(driver, 20).until( # Aumentamos o tempo aqui
-                    EC.presence_of_element_located((By.XPATH, xpath_aba_ativa))
+                # Obter uma referência ao primeiro card antes do clique para esperar a mudança de página
+                primeiro_card_antes_click = WebDriverWait(driver, 5).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, 'article.card.fadeIn'))
                 )
-                print(f"    Aba '{nome_tribunal_completo}' ativada (classe 'active' detectada).")
-            except Exception as active_e:
-                print(f"    Aviso: Aba '{nome_tribunal_completo}' não parece ter se tornado ativa dentro do tempo esperado: {active_e}")
-                screenshot_path = os.path.join(output_folder, f"erro_ativacao_aba_{nome_tribunal_completo.replace('/', '_').replace('\n', '')}_{int(time.time())}.png")
-                driver.save_screenshot(screenshot_path)
-                print(f"    Screenshot de erro de ativação salva em: {screenshot_path}")
-                continue 
-            
-            # Espera que o spinner (se existir) desapareça.
-            print(f"    Aguardando resultados para '{nome_tribunal_completo}' carregarem (esperando spinner desaparecer)...")
-            try:
-                WebDriverWait(driver, 25).until_not( 
-                    EC.visibility_of_element_located((By.CSS_SELECTOR, 'mat-progress-spinner'))
-                )
-                print("    Spinner de carregamento desapareceu.")
-            except:
-                print("    Nenhum spinner de carregamento detectado ou desapareceu rapidamente para esta aba.")
-            
-            # Esperar que um card com o nome do tribunal atual apareça no texto.
-            nome_tribunal_simples = nome_tribunal_completo.split('\n')[0].strip()
-            try:
-                WebDriverWait(driver, 25).until( 
-                    EC.presence_of_element_located((By.XPATH, f'//article[contains(@class, "card")]//span[contains(text(), "{nome_tribunal_simples}")]'))
-                )
-                print(f"    Cards de resultado para '{nome_tribunal_completo}' (contendo '{nome_tribunal_simples}') presentes.")
-            except Exception as cards_e:
-                print(f"    Nenhum card de resultado contendo '{nome_tribunal_simples}' encontrado para '{nome_tribunal_completo}' após clique na aba: {cards_e}. Pode não haver resultados ou o conteúdo não carregou. Pulando.")
-                screenshot_path = os.path.join(output_folder, f"erro_cards_nao_carregados_{nome_tribunal_completo.replace('/', '_').replace('\n', '')}_{int(time.time())}.png")
-                driver.save_screenshot(screenshot_path)
-                print(f"    Screenshot de erro de carregamento de cards salva em: {screenshot_path}")
-                continue 
 
-            time.sleep(3) 
-
-            # --- Loop de Paginação (agora dentro do loop de tribunais) ---
-            pagina_atual = 1
-            while True:
-                print(f"\n--- Processando Página {pagina_atual} para Tribunal: {nome_tribunal_completo} ---")
-                
-                current_cards = driver.find_elements(By.CSS_SELECTOR, 'article.card.fadeIn')
-                if not current_cards:
-                    print(f"    Nenhum card de resultado encontrado na página {pagina_atual} para {nome_tribunal_completo}. Assumindo fim da paginação ou aba sem resultados.")
-                    break
-
-                processar_resultados_da_pagina_atual(driver, main_window_handle, output_folder, nome_tribunal_completo)
-
-                proxima_pagina_locator = (By.CSS_SELECTOR, 'li.ui-paginator-next')
+                # Clicar no botão da próxima página
+                driver.execute_script("arguments[0].click();", proxima_pagina_button) # Usando JS Click aqui, ActionChains pode ser um overkill para paginação simples
                 
                 try:
-                    proxima_pagina_button = WebDriverWait(driver, 10).until( 
-                        EC.element_to_be_clickable(proxima_pagina_locator)
+                    WebDriverWait(driver, 15).until_not(
+                        EC.visibility_of_element_located((By.CSS_SELECTOR, 'mat-progress-spinner'))
                     )
-                    
-                    if 'ui-state-disabled' in proxima_pagina_button.get_attribute('class') or \
-                       proxima_pagina_button.get_attribute('aria-disabled') == 'true':
-                        print(f"    Botão 'Próxima Página' desabilitado. Última página para '{nome_tribunal_completo}'.")
-                        break 
-                    else:
-                        print("    Clicando em 'Próxima Página'...")
-                        driver.execute_script("arguments[0].scrollIntoView(true); window.scrollBy(0, -50);", proxima_pagina_button)
-                        time.sleep(0.5) 
-                        
-                        primeiro_card_antes_click = WebDriverWait(driver, 5).until(
-                            EC.presence_of_element_located((By.CSS_SELECTOR, 'article.card.fadeIn'))
-                        )
+                    print("    Spinner de carregamento da paginação desapareceu.")
+                except:
+                    print("    Nenhum spinner de carregamento de paginação detectado ou desapareceu rapidamente.")
 
-                        # Usar ActionChains para o botão de paginação também para consistência
-                        ActionChains(driver).move_to_element(proxima_pagina_button).click().perform()
-                        
-                        try:
-                            WebDriverWait(driver, 15).until_not(
-                                EC.visibility_of_element_located((By.CSS_SELECTOR, 'mat-progress-spinner'))
-                            )
-                            print("    Spinner de carregamento da paginação desapareceu.")
-                        except:
-                            print("    Nenhum spinner de carregamento de paginação detectado ou desapareceu rapidamente.")
+                try:
+                    WebDriverWait(driver, 15).until(
+                        EC.staleness_of(primeiro_card_antes_click) # Espera que o card anterior desapareça
+                    )
+                    print("    Primeiro card da página anterior se tornou obsoleto.")
+                except:
+                    print("    Aviso: Primeiro card da página anterior não se tornou obsoleto, mas prosseguindo.")
 
-                        try:
-                            WebDriverWait(driver, 15).until(
-                                EC.staleness_of(primeiro_card_antes_click)
-                            )
-                            print("    Primeiro card da página anterior se tornou obsoleto.")
-                        except:
-                            print("    Aviso: Primeiro card da página anterior não se tornou obsoleto, mas prosseguindo.")
-
-                        WebDriverWait(driver, 15).until( 
-                            EC.presence_of_element_located((By.CSS_SELECTOR, 'article.card.fadeIn'))
-                        )
-                        print("    Página carregada com sucesso (novos cards detectados)!")
-                        pagina_atual += 1
-                        time.sleep(3) 
-                except Exception as page_nav_e:
-                    print(f"    Erro ao navegar para a próxima página ou botão 'Próxima Página' não encontrado/clicável: {page_nav_e}")
-                    try:
-                        failed_button = driver.find_element(*proxima_pagina_locator)
-                        print(f"    HTML do botão 'Próxima Página' que falhou: {failed_button.get_attribute('outerHTML')}")
-                    except:
-                        print("    Não foi possível obter o HTML do botão 'Próxima Página'.")
-                    print(f"    Assumindo que não há mais páginas para o tribunal '{nome_tribunal_completo}'.")
-                    break 
-
-        except Exception as aba_e:
-            print(f"Erro ao clicar ou processar a aba do tribunal '{nome_tribunal_completo}': {aba_e}")
-            screenshot_path = os.path.join(output_folder, f"erro_aba_{nome_tribunal_completo.replace('/', '_').replace('\n', '')}_{int(time.time())}.png")
-            html_path = os.path.join(output_folder, f"erro_aba_{nome_tribunal_completo.replace('/', '_').replace('\n', '')}_{int(time.time())}.html")
+                WebDriverWait(driver, 15).until( # Espera que novos cards apareçam
+                    EC.presence_of_element_located((By.CSS_SELECTOR, 'article.card.fadeIn'))
+                )
+                print("    Página carregada com sucesso (novos cards detectados)!")
+                pagina_atual += 1
+                time.sleep(3) # Pequeno delay entre as páginas
+        except Exception as page_nav_e:
+            print(f"    Erro ao navegar para a próxima página ou botão 'Próxima Página' não encontrado/clicável: {page_nav_e}")
             try:
-                driver.save_screenshot(screenshot_path)
-                print(f"    Screenshot de erro salva em: {screenshot_path}")
+                failed_button = driver.find_element(*proxima_pagina_locator)
+                print(f"    HTML do botão 'Próxima Página' que falhou: {failed_button.get_attribute('outerHTML')}")
             except:
-                print("    Não foi possível salvar screenshot.")
-            try:
-                with open(html_path, "w", encoding="utf-8") as f:
-                    f.write(driver.page_source)
-                print(f"    HTML da página no momento do erro salvo em: {html_path}")
-            except:
-                print("    Não foi possível salvar o HTML da página.")
-            
-            continue # Continua para a próxima aba de tribunal
+                print("    Não foi possível obter o HTML do botão 'Próxima Página'.")
+            print(f"    Assumindo que não há mais páginas para o tribunal '{tribunal_sigla}'.")
+            break 
                 
 except Exception as e: 
     print(f"\nOcorreu um erro inesperado durante a execução principal: {e}")
