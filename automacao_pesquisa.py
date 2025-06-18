@@ -7,18 +7,18 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.common.action_chains import ActionChains
 from datetime import datetime
 
 # --- Configuração Inicial ---
-chromedriver_path = "./chromedriver.exe" # Certifique-se de que este chromedriver.exe corresponde ao Chrome que você está usando
+chromedriver_path = "./chromedriver.exe" 
 base_url = "https://comunica.pje.jus.br/consulta"
 
 # Dados para a pesquisa
-# Usaremos a data de hoje para a pesquisa
-data_pesquisa_inicio = datetime.now().strftime("%Y-%m-%d") # Formato YYYY-MM-DD para URL
-data_pesquisa_fim = datetime.now().strftime("%Y-%m-%d")   # Formato YYYY-MM-DD para URL
+data_pesquisa_inicio = "2025-06-16"
+data_pesquisa_fim = "2025-06-16"
 termo_pesquisa = "tepedino"
-tribunal_sigla = "TJSP" # Tribunal do Estado de São Paulo, conforme sua sugestão
+tribunal_sigla = "TJSP" 
 
 # Diretório para salvar os PDFs
 output_folder = "pdfs_pje_tjsp"
@@ -35,7 +35,7 @@ def processar_resultados_da_pagina_atual(driver, main_window_handle, output_fold
     """
     print("\n--- Processando Resultados da Página Atual ---")
     
-    time.sleep(1.5) # Adicionar um pequeno tempo para garantir que a DOM está estável
+    time.sleep(1.5) 
     
     resultados_encontrados = driver.find_elements(By.CSS_SELECTOR, 'article.card.fadeIn') 
     
@@ -46,7 +46,6 @@ def processar_resultados_da_pagina_atual(driver, main_window_handle, output_fold
     print(f"Encontrados {len(resultados_encontrados)} resultados nesta página para o tribunal '{nome_tribunal_atual}'.")
 
     for i in range(len(resultados_encontrados)): 
-        # Re-obtém os resultados a cada iteração do loop de cards para evitar StaleElementReferenceException
         resultados_atuais = driver.find_elements(By.CSS_SELECTOR, 'article.card.fadeIn')
         if i >= len(resultados_atuais): 
             print(f"    Pulando resultado {i+1}, pois a lista de resultados encolheu inesperadamente.")
@@ -54,7 +53,7 @@ def processar_resultados_da_pagina_atual(driver, main_window_handle, output_fold
 
         resultado = resultados_atuais[i] 
 
-        print(f"\nProcessando resultado {i+1} do Tribunal '{nome_tribunal_atual}':")
+        print(f"\nProcessando resultado {i+1} do Tribunal 'TJSP':") # Mantendo TJSP fixo aqui
         numero_processo = "Nao_encontrado" 
 
         try:
@@ -90,7 +89,6 @@ def processar_resultados_da_pagina_atual(driver, main_window_handle, output_fold
                 unique_id = pdf_url.split('/')[-2] if "/certidao" in pdf_url else pdf_url.split('/')[-1].replace(".pdf", "")
                 sanitized_numero_processo = numero_processo.replace('.', '_').replace('-', '_').replace('/', '_').replace('\\', '_').replace(':', '_').replace('*', '_').replace('?', '_').replace('"', '_').replace('<', '_').replace('>', '_').replace('|', '_')
                 
-                # INCLUINDO O NOME DO TRIBUNAL NO NOME DO ARQUIVO
                 file_name = f"{sanitized_numero_processo}_{nome_tribunal_atual.replace(' ', '_').replace('\n', '')}_{unique_id}_Certidao.pdf"
                 file_path = os.path.join(output_folder, file_name)
                 
@@ -142,8 +140,6 @@ try:
     main_window_handle = driver.current_window_handle 
 
     # --- Construindo a URL de pesquisa diretamente ---
-    # URL completa: https://comunica.pje.jus.br/consulta?texto=tepedino&siglaTribunal=TJSP&dataDisponibilizacaoInicio=2025-06-17&dataDisponibilizacaoFim=2025-06-17
-    # Usamos f-strings para construir a URL de forma limpa
     search_url = (
         f"{base_url}?"
         f"texto={termo_pesquisa}"
@@ -157,11 +153,11 @@ try:
 
     print("Aguardando os resultados da pesquisa carregarem na URL direta...")
     try:
-        WebDriverWait(driver, 30).until( # Aumentado o timeout para a página inicial carregar
+        WebDriverWait(driver, 30).until( 
             EC.presence_of_element_located((By.CSS_SELECTOR, 'article.card.fadeIn'))
         )
         try:
-            WebDriverWait(driver, 10).until_not( # Pode haver um spinner mesmo na carga direta
+            WebDriverWait(driver, 10).until_not( 
                 EC.visibility_of_element_located((By.CSS_SELECTOR, 'mat-progress-spinner')) 
             )
             print("Spinner de carregamento desapareceu (se existia).")
@@ -171,11 +167,10 @@ try:
         print(f"Resultados para {tribunal_sigla} carregados!")
     except Exception as timeout_e:
         print(f"Tempo limite excedido para carregar resultados na URL direta. Pode não haver resultados para esta data/termo/tribunal: {timeout_e}")
-        # Neste caso, não há o que processar, encerramos.
         driver.quit() 
         exit() 
 
-    time.sleep(3) # Pequeno delay após o carregamento inicial
+    time.sleep(3) 
 
     # --- Loop de Paginação (agora para um único tribunal) ---
     pagina_atual = 1
@@ -189,61 +184,143 @@ try:
 
         processar_resultados_da_pagina_atual(driver, main_window_handle, output_folder, tribunal_sigla)
 
-        proxima_pagina_locator = (By.CSS_SELECTOR, 'li.ui-paginator-next')
-        
+        # Localizadores
+        proxima_pagina_seta_locator = (By.CSS_SELECTOR, 'li.ui-paginator-next > a')
+        numeros_pagina_locator = (By.CSS_SELECTOR, 'span.ui-paginator-pages > a.ui-paginator-page')
+
         try:
-            proxima_pagina_button = WebDriverWait(driver, 10).until( 
-                EC.element_to_be_clickable(proxima_pagina_locator)
+            # 1. Esperar que os números de página do paginador se tornem visíveis
+            print("    Esperando que os números de página do paginador se tornem visíveis...")
+            paginas_numeradas_visiveis = WebDriverWait(driver, 20).until(
+                EC.visibility_of_all_elements_located(numeros_pagina_locator)
             )
-            
-            if 'ui-state-disabled' in proxima_pagina_button.get_attribute('class') or \
-               proxima_pagina_button.get_attribute('aria-disabled') == 'true':
-                print(f"    Botão 'Próxima Página' desabilitado. Última página para '{tribunal_sigla}'.")
-                break 
-            else:
-                print("    Clicando em 'Próxima Página'...")
-                # Rolar para o botão de paginação antes de clicar
+            print(f"    Números de página visíveis. Paginador renderizado. Total de números visíveis: {len(paginas_numeradas_visiveis)}")
+
+            # 2. Tentar encontrar e clicar no botão de seta "Próxima Página"
+            proxima_pagina_button = None
+            is_disabled = True # Inicia como desabilitado e tenta provar o contrário
+
+            try:
+                print("    Tentando localizar o botão de seta 'Próxima Página'...")
+                # Não usamos WebDriverWait aqui para evitar TimeoutException, apenas tentamos encontrar.
+                # Se não encontrar, o NoSuchElementException será capturado no 'except'.
+                proxima_pagina_button = driver.find_element(*proxima_pagina_seta_locator)
+                print(f"    Botão de seta 'Próxima Página' encontrado no DOM. HTML: {proxima_pagina_button.get_attribute('outerHTML')}")
+
+                # Verifica o estado de disabled
+                is_disabled = proxima_pagina_button.get_attribute('aria-disabled') == 'true'
+                if not is_disabled: # Se não está desabilitado por aria-disabled, verifica a classe no LI pai
+                    try:
+                        parent_li = proxima_pagina_button.find_element(By.XPATH, '..')
+                        if 'ui-state-disabled' in parent_li.get_attribute('class'):
+                            is_disabled = True
+                            print("    Botão de seta 'Próxima Página' desabilitado via classe 'ui-state-disabled' no elemento pai (<li>).")
+                    except Exception as e_parent:
+                        print(f"    Aviso: Erro ao verificar classe 'ui-state-disabled' no pai do botão de seta: {e_parent}")
+                
+            except Exception as e_find_arrow:
+                print(f"    Aviso: Não foi possível encontrar o botão de seta 'Próxima Página' ou erro ao verificar estado: {e_find_arrow}")
+                # Isso significa que NoSuchElementException ocorreu, ou outro erro. Consideramos que o botão não está disponível.
+                proxima_pagina_button = None 
+                is_disabled = True # Força para verdadeiro para tentar a paginação numérica
+
+            clicked_next_page = False
+
+            if proxima_pagina_button and not is_disabled:
+                print("    Botão de seta 'Próxima Página' está habilitado. Tentando clicar...")
                 driver.execute_script("arguments[0].scrollIntoView(true); window.scrollBy(0, -50);", proxima_pagina_button)
                 time.sleep(0.5) 
                 
-                # Obter uma referência ao primeiro card antes do clique para esperar a mudança de página
                 primeiro_card_antes_click = WebDriverWait(driver, 5).until(
                     EC.presence_of_element_located((By.CSS_SELECTOR, 'article.card.fadeIn'))
                 )
-
-                # Clicar no botão da próxima página
-                driver.execute_script("arguments[0].click();", proxima_pagina_button) # Usando JS Click aqui, ActionChains pode ser um overkill para paginação simples
+                driver.execute_script("arguments[0].click();", proxima_pagina_button)
+                print("    Clique no botão de seta 'Próxima Página' executado via JavaScript.")
+                clicked_next_page = True
+            else:
+                print("    Botão de seta 'Próxima Página' não disponível ou desabilitado. Tentando clicar no próximo número de página...")
                 
-                try:
-                    WebDriverWait(driver, 15).until_not(
-                        EC.visibility_of_element_located((By.CSS_SELECTOR, 'mat-progress-spinner'))
-                    )
-                    print("    Spinner de carregamento da paginação desapareceu.")
-                except:
-                    print("    Nenhum spinner de carregamento de paginação detectado ou desapareceu rapidamente.")
+                # Encontrar a página ativa
+                pagina_ativa_elem = None
+                for pagina_num_elem in paginas_numeradas_visiveis:
+                    if 'ui-state-active' in pagina_num_elem.get_attribute('class'):
+                        pagina_ativa_elem = pagina_num_elem
+                        break
+                
+                if pagina_ativa_elem:
+                    try:
+                        pagina_ativa_numero = int(pagina_ativa_elem.text)
+                        proxima_pagina_numero = pagina_ativa_numero + 1
+                        
+                        proxima_pagina_numerica_locator = (By.XPATH, f"//span[contains(@class, 'ui-paginator-pages')]/a[text()='{proxima_pagina_numero}']")
+                        
+                        print(f"    Tentando encontrar o link para a página numérica: {proxima_pagina_numero}")
+                        proxima_pagina_numerica_button = WebDriverWait(driver, 10).until(
+                            EC.element_to_be_clickable(proxima_pagina_numerica_locator)
+                        )
+                        
+                        print(f"    Link da página numérica {proxima_pagina_numero} encontrado. HTML: {proxima_pagina_numerica_button.get_attribute('outerHTML')}")
+                        
+                        # Verifica se a próxima página numérica não está desabilitada (embora se 'element_to_be_clickable' passou, já estaria)
+                        if 'ui-state-disabled' not in proxima_pagina_numerica_button.get_attribute('class'):
+                            driver.execute_script("arguments[0].scrollIntoView(true); window.scrollBy(0, -50);", proxima_pagina_numerica_button)
+                            time.sleep(0.5)
+                            
+                            primeiro_card_antes_click = WebDriverWait(driver, 5).until(
+                                EC.presence_of_element_located((By.CSS_SELECTOR, 'article.card.fadeIn'))
+                            )
+                            driver.execute_script("arguments[0].click();", proxima_pagina_numerica_button)
+                            print(f"    Clique na página numérica {proxima_pagina_numero} executado via JavaScript.")
+                            clicked_next_page = True
+                        else:
+                            print(f"    Página numérica {proxima_pagina_numero} encontrada, mas está desabilitada. Fim da paginação.")
+                    except ValueError:
+                        print(f"    Erro ao converter número da página ativa '{pagina_ativa_elem.text}' para inteiro.")
+                    except Exception as e_num_page:
+                        print(f"    Não foi possível clicar na próxima página numérica ou ela não existe: {e_num_page}")
+                        
+            if not clicked_next_page:
+                print("    Não foi possível navegar para a próxima página (botão de seta ou número) ou fim da paginação.")
+                break # Sai do loop de paginação
 
-                try:
-                    WebDriverWait(driver, 15).until(
-                        EC.staleness_of(primeiro_card_antes_click) # Espera que o card anterior desapareça
-                    )
-                    print("    Primeiro card da página anterior se tornou obsoleto.")
-                except:
-                    print("    Aviso: Primeiro card da página anterior não se tornou obsoleto, mas prosseguindo.")
-
-                WebDriverWait(driver, 15).until( # Espera que novos cards apareçam
-                    EC.presence_of_element_located((By.CSS_SELECTOR, 'article.card.fadeIn'))
-                )
-                print("    Página carregada com sucesso (novos cards detectados)!")
-                pagina_atual += 1
-                time.sleep(3) # Pequeno delay entre as páginas
-        except Exception as page_nav_e:
-            print(f"    Erro ao navegar para a próxima página ou botão 'Próxima Página' não encontrado/clicável: {page_nav_e}")
+            # --- Esperas para o conteúdo da nova página ---
             try:
-                failed_button = driver.find_element(*proxima_pagina_locator)
-                print(f"    HTML do botão 'Próxima Página' que falhou: {failed_button.get_attribute('outerHTML')}")
+                WebDriverWait(driver, 20).until_not( 
+                    EC.visibility_of_element_located((By.CSS_SELECTOR, 'mat-progress-spinner'))
+                )
+                print("    Spinner de carregamento da paginação desapareceu (se existia).")
             except:
-                print("    Não foi possível obter o HTML do botão 'Próxima Página'.")
-            print(f"    Assumindo que não há mais páginas para o tribunal '{tribunal_sigla}'.")
+                print("    Nenhum spinner de carregamento de paginação detectado ou desapareceu rapidamente.")
+
+            try:
+                # Espera que o primeiro card da página anterior se torne obsoleto
+                WebDriverWait(driver, 20).until( 
+                    EC.staleness_of(primeiro_card_antes_click) 
+                )
+                print("    Primeiro card da página anterior se tornou obsoleto.")
+            except Exception as stale_e:
+                print(f"    Aviso: Primeiro card da página anterior não se tornou obsoleto em 20s. (Pode ser atualização in-place ou erro: {stale_e})")
+            
+            # Esperar pelos novos cards na página
+            WebDriverWait(driver, 20).until( 
+                EC.presence_of_element_located((By.CSS_SELECTOR, 'article.card.fadeIn'))
+            )
+            
+            time.sleep(3) # Pausa adicional para garantir que tudo esteja renderizado
+
+            print("    Página carregada com sucesso (novos cards detectados/DOM atualizada)!")
+            pagina_atual += 1
+            time.sleep(2) # Pequena pausa entre páginas
+
+        except Exception as page_nav_e:
+            print(f"    Erro geral ao navegar para a próxima página ou ao processar o paginador: {type(page_nav_e).__name__}: {page_nav_e}")
+            try:
+                paginator_section = driver.find_element(By.CSS_SELECTOR, 'div.ui-paginator')
+                print(f"    HTML da seção do paginador (div.ui-paginator) no momento do erro: {paginator_section.get_attribute('outerHTML')}")
+            except Exception as paginator_e:
+                print(f"    Não foi possível encontrar a seção do paginador para debug após o erro: {paginator_e}")
+
+            print(f"    Assumindo que não há mais páginas ou erro persistente para o tribunal '{tribunal_sigla}'.")
             break 
                 
 except Exception as e: 
